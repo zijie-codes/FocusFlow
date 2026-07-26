@@ -89,12 +89,15 @@ struct TodayView: View {
     }
 
     private var emptyState: some View {
-        EmptyStateView(
-            systemImage: viewModel.completionScope == .planned ? "checklist" : "sparkles",
+        let isPlanned = viewModel.completionScope == .planned
+        let actionTitle: String? = isPlanned ? "添加任务" : nil
+        let action: (() -> Void)? = isPlanned ? { viewModel.presentNewTask() } : nil
+        return EmptyStateView(
+            systemImage: isPlanned ? "checklist" : "sparkles",
             title: viewModel.emptyTitle,
             message: viewModel.emptyMessage,
-            actionTitle: viewModel.completionScope == .planned ? "添加任务" : nil,
-            action: viewModel.completionScope == .planned ? viewModel.presentNewTask : nil
+            actionTitle: actionTitle,
+            action: action
         )
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
         .listRowBackground(Color.clear)
