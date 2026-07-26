@@ -1,188 +1,158 @@
 import Foundation
 import SwiftUI
 
+/// 待办首页：蓝紫横幅 + 全宽渐变任务卡片，右侧「开始」直接进入专注。
 struct TodayView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var timer: TimerEngine
     @StateObject private var viewModel = TodayViewModel()
     @State private var pendingDeletion: TaskItem?
+    @State private var isFreeFocusPresented = false
+    @State private var isListManagerPresented = false
 
     var body: some View {
-        NavigationStack {
-            taskList
-                .navigationTitle(viewModel.navigationTitle)
-                .searchable(
-                    text: $viewModel.searchText,
-                    placement: .navigationBarDrawer(displayMode: .automatic),
-                    prompt: "搜索任务、备注或清单"
-                )
-                .toolbar { todayToolbar }
-                .tint(FocusFlowTheme.accent)
-                .onAppear {
-                    viewModel.bind(to: container.store)
-                }
-                .sheet(isPresented: $viewModel.isTaskEditorPresented) {
-                    TaskEditorView(
-                        task: viewModel.editingTask,
-                        lists: viewModel.lists,
-                        onSave: viewModel.save
-                    )
-                }
-                .sheet(isPresented: $viewModel.isListManagerPresented) {
-                    TaskListManagerView(
-                        lists: viewModel.lists,
-                        onSave: viewModel.saveList,
-                        onDelete: viewModel.deleteList
-                    )
-                }
-                .confirmationDialog(
-                    "删除这项任务？",
-                    isPresented: isDeleteConfirmationPresented,
-                    titleVisibility: .visible
-                ) {
-                    Button("删除任务", role: .destructive, action: confirmPendingDeletion)
-                    Button("取消", role: .cancel) { pendingDeletion = nil }
-                } message: {
-                    Text("此操作需要确认，以避免滑动误删。")
-                }
+        VStack(spacing: 0) {
+            headerBar
+            cardList
         }
-    }
-
-    private var taskList: some View {
-        List {
-            summarySection
-            quickStartSection
-            filterSection
-            tasksSection
+        .background(FocusFlowTheme.pageBackground.ignoresSafeArea())
+        .onAppear {
+            viewModel.bind(to: container.store)
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(FocusFlowTheme.pageBackground)
-    }
-
-    private var quickStartSection: some View {
-        Section {
-            QuickStartCard(
-                isTimerActive: timer.hasActiveSession,
-                onStart: startQuickFocus
+        .sheet(isPresented: $viewModel.isTaskEditorPresented) {
+            TaskEditorView(
+                task: viewModel.editingTask,
+                lists: viewModel.lists,
+                onSave: viewModel.save
             )
-            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
+        }
+        .sheet(isPresented: $isFreeFocusPresented) {
+            FocusView()
+        }
+        .sheet(isPresented: $isListManagerPresented) {
+            TaskListManagerView(
+                lists: viewModel.lists,
+                onSave: { container.store.upsertList($0) },
+                onDelete: { container.store.deleteList(id: $0.id) }
+            )
+        }
+        .confirmationDialog(
+            "删除这项任务？",
+            isPresented: isDeleteConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("删除任务", role: .destructive, action: confirmPendingDeletion)
+            Button("取消", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text("删除后不可恢复。")
         }
     }
 
-    private func startQuickFocus() {
-        container.startFocus(taskID: nil, mode: .countdown)
-    }
+    // MARK: - Header
 
-    private var summarySection: some View {
-        Section {
-            TodaySummaryCard(viewModel: viewModel)
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-        }
-    }
-
-    private var filterSection: some View {
-        Section {
-            filterBar
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-        }
-    }
-
-    private var tasksSection: some View {
-        Section {
-            if viewModel.visibleTasks.isEmpty {
-                emptyState
-            } else {
-                taskRows
-            }
-        } header: {
-            tasksHeader
-        }
-    }
-
-    private var emptyState: some View {
-        let isPlanned = viewModel.completionScope == .planned
-        let actionTitle: String? = isPlanned ? "添加任务" : nil
-        let action: (() -> Void)? = isPlanned ? { viewModel.presentNewTask() } : nil
-        return EmptyStateView(
-            systemImage: isPlanned ? "checklist" : "sparkles",
-            title: viewModel.emptyTitle,
-            message: viewModel.emptyMessage,
-            actionTitle: actionTitle,
-            action: action
-        )
-        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-    }
-
-    private var taskRows: some View {
-        ForEach(viewModel.visibleTasks) { task in
-            taskRow(task)
-                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-        }
-        .onMove(perform: viewModel.moveVisibleTasks)
-    }
-
-    private func taskRow(_ task: TaskItem) -> TaskRowView {
-        TaskRowView(
-            task: task,
-            list: viewModel.list(for: task),
-            onToggleCompletion: { viewModel.toggleCompletion(of: task) },
-            onEdit: { viewModel.presentEditor(for: task) },
-            onDelete: { pendingDeletion = task },
-            onPostpone: task.isCompleted ? nil : { viewModel.postponeToTomorrow(task) },
-            startDisabled: timer.hasActiveSession,
-            onStartFocus: { startFocus(for: task) }
-        )
-    }
-
-    private func startFocus(for task: TaskItem) {
-        container.startFocus(taskID: task.id, mode: .countdown, duration: task.estimatedFocusDuration)
-    }
-
-    private var tasksHeader: some View {
-        HStack {
-            Text(viewModel.completionScope == .planned ? "待办任务" : "完成记录")
+    private var headerBar: some View {
+        HStack(spacing: 28) {
             Spacer()
-            if !viewModel.visibleTasks.isEmpty {
-                Text("\(viewModel.visibleTasks.count) 项")
-                    .font(.caption)
-                    .textCase(nil)
+            Button {
+                isFreeFocusPresented = true
+            } label: {
+                Image(systemName: "clock")
             }
-        }
-    }
-
-    @ToolbarContentBuilder
-    private var todayToolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarLeading) {
-            if viewModel.visibleTasks.count > 1 {
-                EditButton()
-            }
-        }
-        ToolbarItemGroup(placement: .navigationBarTrailing) {
-            filterMenu
+            .accessibilityLabel("自由计时")
 
             Button {
-                viewModel.isListManagerPresented = true
+                viewModel.presentNewTask()
             } label: {
-                Image(systemName: "folder.badge.gearshape")
-            }
-            .accessibilityLabel("管理清单")
-
-            Button(action: viewModel.presentNewTask) {
                 Image(systemName: "plus")
             }
-            .accessibilityLabel("添加任务")
+            .accessibilityLabel("新建任务")
+
+            Menu {
+                Button {
+                    isListManagerPresented = true
+                } label: {
+                    Label("清单管理", systemImage: "folder.badge.gearshape")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .rotationEffect(.degrees(90))
+            }
+            .accessibilityLabel("更多")
         }
+        .font(.title2)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 22)
+        .padding(.top, 4)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity)
+        .background(FocusFlowTheme.banner.ignoresSafeArea(edges: .top))
+    }
+
+    // MARK: - Cards
+
+    private var cardList: some View {
+        ScrollView {
+            LazyVStack(spacing: 14) {
+                ForEach(viewModel.activeTasks) { task in
+                    todoCard(task)
+                }
+                if viewModel.activeTasks.isEmpty {
+                    emptyHint
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 16)
+            .padding(.bottom, 28)
+        }
+    }
+
+    private func todoCard(_ task: TaskItem) -> some View {
+        TodoCard(
+            task: task,
+            startDisabled: timer.hasActiveSession,
+            onStart: { start(task) },
+            onTap: { viewModel.presentEditor(for: task) }
+        )
+        .contextMenu {
+            Button {
+                viewModel.presentEditor(for: task)
+            } label: {
+                Label("编辑", systemImage: "pencil")
+            }
+            Button {
+                viewModel.toggleCompletion(of: task)
+            } label: {
+                Label("标记完成", systemImage: "checkmark.circle")
+            }
+            Button(role: .destructive) {
+                pendingDeletion = task
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
+    }
+
+    private var emptyHint: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "tray")
+                .font(.title2)
+                .foregroundStyle(FocusFlowTheme.accent)
+            Text("还没有待办，点右上角 + 新建")
+                .font(.subheadline)
+                .foregroundStyle(FocusFlowTheme.secondaryText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 46)
+        .background(
+            RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous)
+                .fill(FocusFlowTheme.cardBackground)
+        )
+    }
+
+    // MARK: - Actions
+
+    private func start(_ task: TaskItem) {
+        container.startFocus(taskID: task.id, mode: .countdown, duration: task.estimatedFocusDuration)
     }
 
     private var isDeleteConfirmationPresented: Binding<Bool> {
@@ -198,391 +168,66 @@ struct TodayView: View {
         }
         pendingDeletion = nil
     }
-
-    private var filterBar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(TodayViewModel.DayScope.allCases) { scope in
-                        FilterChip(
-                            title: scope.rawValue,
-                            systemImage: scope.systemImage,
-                            isSelected: viewModel.dayScope == scope
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                viewModel.dayScope = scope
-                            }
-                        }
-                    }
-
-                    Divider()
-                        .frame(height: 24)
-                        .padding(.horizontal, 2)
-
-                    ForEach(TodayViewModel.CompletionScope.allCases) { scope in
-                        FilterChip(
-                            title: scope.rawValue,
-                            systemImage: scope == .planned ? "circle.dashed" : "checkmark.circle",
-                            count: scope == .planned && viewModel.dayScope == .today ? viewModel.todayPlannedCount : nil,
-                            isSelected: viewModel.completionScope == scope
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                viewModel.completionScope = scope
-                            }
-                        }
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-
-            if !viewModel.searchText.isEmpty {
-                Label("正在当前筛选范围内搜索", systemImage: "magnifyingglass")
-                    .font(.caption)
-                    .foregroundStyle(FocusFlowTheme.secondaryText)
-            }
-            if viewModel.hasActiveFilters {
-                Button("清除清单、标签和优先级筛选") { viewModel.clearFilters() }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(FocusFlowTheme.accent)
-            }
-        }
-    }
-
-    private var filterMenu: some View {
-        Menu {
-            Menu("清单") {
-                Button("全部清单") { viewModel.selectedListID = nil }
-                ForEach(viewModel.lists) { list in
-                    Button {
-                        viewModel.selectedListID = list.id
-                    } label: {
-                        Label(list.name, systemImage: viewModel.selectedListID == list.id ? "checkmark" : list.iconName)
-                    }
-                }
-            }
-            Menu("优先级") {
-                Button("全部优先级") { viewModel.selectedPriority = nil }
-                ForEach(TaskPriority.allCases, id: \.self) { priority in
-                    Button(priorityFilterName(priority)) { viewModel.selectedPriority = priority }
-                }
-            }
-            if !viewModel.availableTags.isEmpty {
-                Menu("标签") {
-                    Button("全部标签") { viewModel.selectedTag = nil }
-                    ForEach(viewModel.availableTags, id: \.self) { tag in
-                        Button(tag) { viewModel.selectedTag = tag }
-                    }
-                }
-            }
-            if viewModel.hasActiveFilters {
-                Divider()
-                Button("清除筛选", action: viewModel.clearFilters)
-            }
-        } label: {
-            Image(systemName: viewModel.hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-        }
-        .accessibilityLabel("筛选任务")
-    }
-
-    private func priorityFilterName(_ priority: TaskPriority) -> String {
-        switch priority {
-        case .none: return "无优先级"
-        case .low: return "低优先级"
-        case .medium: return "中优先级"
-        case .high: return "高优先级"
-        }
-    }
 }
 
-private struct QuickStartCard: View {
-    let isTimerActive: Bool
+/// 单张待办卡片：渐变背景、左侧标题与时长、右侧「开始」。
+private struct TodoCard: View {
+    let task: TaskItem
+    let startDisabled: Bool
     let onStart: () -> Void
+    let onTap: () -> Void
+
+    private var minutesText: String {
+        let duration = task.estimatedFocusDuration ?? 25 * 60
+        return "\(max(Int(duration / 60), 1)) 分钟"
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "timer")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(FocusFlowTheme.accent)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(FocusFlowTheme.accent.opacity(0.11)))
+        ZStack {
+            RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous)
+                .fill(FocusFlowTheme.cardGradient(seed: task.id.uuidString))
+            content
+        }
+        .frame(height: 104)
+        .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous))
+        .onTapGesture(perform: onTap)
+        .accessibilityElement(children: .combine)
+    }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text("快速开始")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(FocusFlowTheme.primaryText)
-                Text(isTimerActive ? "计时进行中" : "不关联任务，立即进入一个番茄")
-                    .font(.caption)
-                    .foregroundStyle(FocusFlowTheme.secondaryText)
+    private var content: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(task.title)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer(minLength: 10)
+                Text(minutesText)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.92))
             }
-
             Spacer(minLength: 8)
-
-            PlayCircleButton(size: 40, action: onStart)
-                .disabled(isTimerActive)
-                .opacity(isTimerActive ? 0.35 : 1)
+            startButton
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
-        .background(
-            RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous)
-                .fill(FocusFlowTheme.cardBackground)
-        )
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct TodaySummaryCard: View {
-    @ObservedObject var viewModel: TodayViewModel
-
-    private var dateText: String {
-        Date().formatted(
-            .dateTime
-                .locale(Locale(identifier: "zh_CN"))
-                .month(.wide)
-                .day()
-                .weekday(.wide)
-        )
+        .padding(.leading, 20)
+        .padding(.vertical, 18)
     }
 
-    private var greeting: String {
-        switch Calendar.current.component(.hour, from: Date()) {
-        case 5..<11: return "早上好"
-        case 11..<14: return "中午好"
-        case 14..<19: return "下午好"
-        default: return "晚上好"
+    private var startButton: some View {
+        Button(action: onStart) {
+            Text("开始")
+                .font(.title3.weight(.semibold))
+                .tracking(4)
+                .foregroundStyle(.white)
+                .padding(.vertical, 30)
+                .padding(.leading, 24)
+                .padding(.trailing, 22)
+                .contentShape(Rectangle())
         }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(greeting)
-                        .font(.title2.weight(.bold))
-                    Text(dateText)
-                        .font(.subheadline)
-                        .foregroundStyle(FocusFlowTheme.secondaryText)
-                }
-
-                Spacer()
-
-                ZStack {
-                    CircularProgressView(progress: viewModel.todayProgress, lineWidth: 7, tint: FocusFlowTheme.accent)
-                    Text("\(Int(viewModel.todayProgress * 100))%")
-                        .font(.caption.weight(.bold).monospacedDigit())
-                        .foregroundStyle(FocusFlowTheme.primaryText)
-                }
-                .frame(width: 58, height: 58)
-            }
-
-            HStack(spacing: 0) {
-                TodayMetric(
-                    title: "待完成",
-                    value: "\(viewModel.todayPlannedCount)",
-                    systemImage: "list.bullet",
-                    tint: FocusFlowTheme.sky
-                )
-                Divider().frame(height: 48)
-                TodayMetric(
-                    title: "已完成",
-                    value: "\(viewModel.todayCompletedCount)",
-                    systemImage: "checkmark",
-                    tint: FocusFlowTheme.mint
-                )
-                Divider().frame(height: 48)
-                TodayMetric(
-                    title: "今日专注",
-                    value: viewModel.todayFocusText,
-                    systemImage: "clock.fill",
-                    tint: FocusFlowTheme.amber
-                )
-            }
-        }
-        .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous)
-                .fill(FocusFlowTheme.elevatedBackground)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous)
-                .stroke(FocusFlowTheme.separator.opacity(0.35), lineWidth: 0.5)
-        )
-    }
-}
-
-private struct TodayMetric: View {
-    let title: String
-    let value: String
-    let systemImage: String
-    let tint: Color
-
-    var body: some View {
-        VStack(spacing: 5) {
-            Label {
-                Text(value)
-                    .font(.headline.monospacedDigit())
-            } icon: {
-                Image(systemName: systemImage)
-                    .foregroundStyle(tint)
-            }
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(FocusFlowTheme.secondaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, minHeight: 54)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct TaskListManagerView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    let lists: [TaskList]
-    let onSave: (TaskList) -> Void
-    let onDelete: (TaskList) -> Void
-
-    @State private var newListName = ""
-    @State private var editingList: TaskList?
-    @State private var editName = ""
-    @State private var deletingList: TaskList?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    HStack(spacing: 10) {
-                        TextField("新清单名称", text: $newListName)
-                            .submitLabel(.done)
-                            .onSubmit(addList)
-                        Button(action: addList) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title3)
-                        }
-                        .disabled(cleanNewListName.isEmpty)
-                        .accessibilityLabel("创建清单")
-                    }
-                } footer: {
-                    Text("用清单区分工作、学习和生活，让每天的重点更清晰。")
-                }
-
-                Section("我的清单") {
-                    if lists.isEmpty {
-                        Text("还没有自定义清单")
-                            .foregroundStyle(FocusFlowTheme.secondaryText)
-                    }
-
-                    ForEach(Array(lists.enumerated()), id: \.element.id) { index, list in
-                        HStack(spacing: 12) {
-                            Image(systemName: list.iconName)
-                                .foregroundStyle(FocusFlowTheme.categoryColor(at: index))
-                                .frame(width: 30, height: 30)
-                                .background(
-                                    Circle().fill(FocusFlowTheme.categoryColor(at: index).opacity(0.12))
-                                )
-
-                            Text(list.name)
-                                .font(.body.weight(.medium))
-
-                            Spacer()
-
-                            Menu {
-                                Button {
-                                    editingList = list
-                                    editName = list.name
-                                } label: {
-                                    Label("重命名", systemImage: "pencil")
-                                }
-                                Button(role: .destructive) {
-                                    deletingList = list
-                                } label: {
-                                    Label("删除", systemImage: "trash")
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .foregroundStyle(FocusFlowTheme.secondaryText)
-                            }
-                        }
-                        .swipeActions {
-                            Button(role: .destructive) { deletingList = list } label: {
-                                Label("删除", systemImage: "trash")
-                            }
-                            Button {
-                                editingList = list
-                                editName = list.name
-                            } label: {
-                                Label("重命名", systemImage: "pencil")
-                            }
-                            .tint(FocusFlowTheme.sky)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("清单管理")
-            .navigationBarTitleDisplayMode(.inline)
-            .tint(FocusFlowTheme.accent)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
-                        .fontWeight(.semibold)
-                }
-            }
-            .alert("重命名清单", isPresented: renameAlertBinding) {
-                TextField("清单名称", text: $editName)
-                Button("取消", role: .cancel) { editingList = nil }
-                Button("保存", action: saveRename)
-                    .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } message: {
-                Text("请输入一个容易辨认的名称。")
-            }
-            .confirmationDialog(
-                "删除这个清单？",
-                isPresented: deleteDialogBinding,
-                titleVisibility: .visible
-            ) {
-                Button("删除清单", role: .destructive) {
-                    if let deletingList { onDelete(deletingList) }
-                    deletingList = nil
-                }
-                Button("取消", role: .cancel) { deletingList = nil }
-            } message: {
-                Text("确认后将删除该清单。")
-            }
-        }
-    }
-
-    private var cleanNewListName: String {
-        newListName.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var renameAlertBinding: Binding<Bool> {
-        Binding(
-            get: { editingList != nil },
-            set: { if !$0 { editingList = nil } }
-        )
-    }
-
-    private var deleteDialogBinding: Binding<Bool> {
-        Binding(
-            get: { deletingList != nil },
-            set: { if !$0 { deletingList = nil } }
-        )
-    }
-
-    private func addList() {
-        guard !cleanNewListName.isEmpty else { return }
-        onSave(TaskList(name: cleanNewListName, sortOrder: lists.count))
-        newListName = ""
-    }
-
-    private func saveRename() {
-        let name = editName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard var list = editingList, !name.isEmpty else { return }
-        list.name = name
-        list.updatedAt = Date()
-        onSave(list)
-        editingList = nil
+        .buttonStyle(.plain)
+        .disabled(startDisabled)
+        .opacity(startDisabled ? 0.55 : 1)
+        .accessibilityLabel("开始 \(task.title)")
     }
 }

@@ -1,12 +1,18 @@
 import SwiftUI
 
 enum FocusFlowTheme {
-    static let accent = Color(red: 0.94, green: 0.32, blue: 0.23)
-    static let accentSoft = Color(red: 1.00, green: 0.91, blue: 0.87)
+    /// 主题蓝紫（periwinkle），对齐番茄ToDo 风格截图。
+    static let accent = Color(red: 0.49, green: 0.53, blue: 0.76)
+    static let accentDeep = Color(red: 0.44, green: 0.48, blue: 0.72)
+    static let accentSoft = Color(red: 0.91, green: 0.92, blue: 0.96)
+    /// 顶部横幅与统计页整页背景。
+    static let banner = Color(red: 0.54, green: 0.58, blue: 0.78)
+    static let statsBackground = Color(red: 0.61, green: 0.65, blue: 0.82)
     static let mint = Color(red: 0.18, green: 0.67, blue: 0.55)
     static let sky = Color(red: 0.26, green: 0.55, blue: 0.92)
     static let amber = Color(red: 0.96, green: 0.66, blue: 0.20)
     static let violet = Color(red: 0.53, green: 0.40, blue: 0.88)
+    static let coral = Color(red: 0.95, green: 0.45, blue: 0.40)
 
     static let pageBackground = Color(uiColor: .systemGroupedBackground)
     static let cardBackground = Color(uiColor: .secondarySystemGroupedBackground)
@@ -19,6 +25,36 @@ enum FocusFlowTheme {
     static let cornerRadius: CGFloat = 14
     static let compactCornerRadius: CGFloat = 10
     static let horizontalPadding: CGFloat = 18
+
+    static let accentGradient = LinearGradient(
+        colors: [
+            Color(red: 0.56, green: 0.60, blue: 0.80),
+            Color(red: 0.45, green: 0.49, blue: 0.73)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    static func listColor(hex: String?) -> Color {
+        guard let hex, let color = Color(focusFlowHex: hex) else { return accent }
+        return color
+    }
+
+    /// 待办卡片的情绪化渐变背景（替代照片素材），按任务 ID 稳定分配。
+    static let cardGradientPresets: [[Color]] = [
+        [Color(red: 0.38, green: 0.40, blue: 0.51), Color(red: 0.63, green: 0.52, blue: 0.50)],
+        [Color(red: 0.52, green: 0.80, blue: 0.76), Color(red: 0.32, green: 0.64, blue: 0.61)],
+        [Color(red: 0.56, green: 0.63, blue: 0.68), Color(red: 0.41, green: 0.50, blue: 0.56)],
+        [Color(red: 0.66, green: 0.64, blue: 0.79), Color(red: 0.53, green: 0.60, blue: 0.75)],
+        [Color(red: 0.17, green: 0.42, blue: 0.45), Color(red: 0.10, green: 0.30, blue: 0.33)],
+        [Color(red: 0.67, green: 0.71, blue: 0.77), Color(red: 0.54, green: 0.61, blue: 0.68)]
+    ]
+
+    static func cardGradient(seed: String) -> LinearGradient {
+        let sum = seed.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        let colors = cardGradientPresets[sum % cardGradientPresets.count]
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
 
     static let categoryColors: [Color] = [accent, mint, sky, amber, violet]
 
@@ -228,11 +264,12 @@ struct CircularProgressView: View {
     let progress: Double
     var lineWidth: CGFloat = 9
     var tint: Color = FocusFlowTheme.accent
+    var track: Color = Color(uiColor: .tertiarySystemFill)
 
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color(uiColor: .tertiarySystemFill), lineWidth: lineWidth)
+                .stroke(track, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: min(max(progress, 0), 1))
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
@@ -288,5 +325,18 @@ struct PlayCircleButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("开始专注")
+    }
+}
+
+extension Color {
+    /// 解析 "#RRGGBB" 形式的清单颜色，供列表配色使用。
+    init?(focusFlowHex hex: String) {
+        let value = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        guard value.count == 6, let integer = UInt64(value, radix: 16) else { return nil }
+        self.init(
+            red: Double((integer >> 16) & 0xff) / 255,
+            green: Double((integer >> 8) & 0xff) / 255,
+            blue: Double(integer & 0xff) / 255
+        )
     }
 }

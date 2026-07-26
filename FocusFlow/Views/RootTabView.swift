@@ -2,7 +2,7 @@ import SwiftUI
 
 enum RootTab: Hashable {
     case today
-    case focus
+    case lists
     case statistics
     case settings
 }
@@ -16,25 +16,25 @@ struct RootTabView: View {
         TabView(selection: $selection) {
             TodayView()
                 .tabItem {
-                    Label("待办", systemImage: selection == .today ? "checkmark.circle.fill" : "checkmark.circle")
+                    Label("待办", systemImage: "line.3.horizontal")
                 }
                 .tag(RootTab.today)
 
-            FocusView()
+            ListsView()
                 .tabItem {
-                    Label("专注", systemImage: selection == .focus ? "timer.circle.fill" : "timer")
+                    Label("待办集", systemImage: "line.3.horizontal.decrease")
                 }
-                .tag(RootTab.focus)
+                .tag(RootTab.lists)
 
             StatisticsView()
                 .tabItem {
-                    Label("统计", systemImage: selection == .statistics ? "chart.bar.fill" : "chart.bar")
+                    Label("数据统计", systemImage: selection == .statistics ? "chart.pie.fill" : "chart.pie")
                 }
                 .tag(RootTab.statistics)
 
             SettingsView()
                 .tabItem {
-                    Label("设置", systemImage: selection == .settings ? "gearshape.fill" : "gearshape")
+                    Label("我的", systemImage: selection == .settings ? "person.fill" : "person")
                 }
                 .tag(RootTab.settings)
         }

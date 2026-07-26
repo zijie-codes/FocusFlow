@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// 我的页：蓝紫标题栏 + 分组白卡彩色图标行，子设置以推入页承载。
 struct SettingsView: View {
     @EnvironmentObject private var container: AppContainer
 
@@ -13,21 +14,33 @@ struct SettingsView: View {
     @State private var showImportConfirmation = false
     @State private var showClearConfirmation = false
     @State private var showPrivacy = false
+    @State private var showBackupDialog = false
+    @State private var isHistoryPresented = false
+    @State private var isListManagerPresented = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
 
     var body: some View {
         NavigationStack {
-            Form {
-                timerSection
-                automationSection
-                reminderSection
-                appearanceSection
-                dataSection
-                aboutSection
+            VStack(spacing: 0) {
+                headerBar
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionLabel("我的")
+                        accountCard
+                        sectionLabel("外观 | 主题")
+                        appearanceCard
+                        sectionLabel("专注")
+                        focusCard
+                        versionFooter
+                    }
+                    .padding(.horizontal, 15)
+                    .padding(.top, 14)
+                    .padding(.bottom, 30)
+                }
             }
-            .navigationTitle("设置")
-            .tint(FocusFlowTheme.accent)
+            .background(FocusFlowTheme.pageBackground.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
             .onAppear { draft = container.store.settings }
             .onReceive(container.store.$data) { data in
                 if draft != data.settings { draft = data.settings }
@@ -50,6 +63,17 @@ struct SettingsView: View {
                 onCompletion: handleImportSelection
             )
             .confirmationDialog(
+                "备份与恢复",
+                isPresented: $showBackupDialog,
+                titleVisibility: .visible
+            ) {
+                Button("导出 JSON 备份", action: prepareExport)
+                Button("导入 JSON 备份") { isImporting = true }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("数据只保存在本机，请定期导出备份。")
+            }
+            .confirmationDialog(
                 "导入并覆盖当前数据？",
                 isPresented: $showImportConfirmation,
                 titleVisibility: .visible
@@ -70,18 +94,22 @@ struct SettingsView: View {
                 Text("该操作无法撤销。建议先导出 JSON 备份。")
             }
             .sheet(isPresented: $showPrivacy) { PrivacyView() }
-            .alert("操作失败", isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
-            )) {
+            .sheet(isPresented: $isHistoryPresented) {
+                FocusRecordListView(records: container.store.records, tasks: container.store.tasks)
+            }
+            .sheet(isPresented: $isListManagerPresented) {
+                TaskListManagerView(
+                    lists: container.store.lists.filter { !$0.isArchived },
+                    onSave: { container.store.upsertList($0) },
+                    onDelete: { container.store.deleteList(id: $0.id) }
+                )
+            }
+            .alert("操作失败", isPresented: errorBinding) {
                 Button("知道了", role: .cancel) { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "未知错误")
             }
-            .alert("完成", isPresented: Binding(
-                get: { successMessage != nil },
-                set: { if !$0 { successMessage = nil } }
-            )) {
+            .alert("完成", isPresented: successBinding) {
                 Button("好", role: .cancel) { successMessage = nil }
             } message: {
                 Text(successMessage ?? "")
@@ -89,112 +117,177 @@ struct SettingsView: View {
         }
     }
 
-    private var timerSection: some View {
-        Section("默认计时") {
-            durationStepper("专注", keyPath: \.defaultFocusDuration, range: 1...180)
-            durationStepper("短休息", keyPath: \.shortBreakDuration, range: 1...60)
-            durationStepper("长休息", keyPath: \.longBreakDuration, range: 1...120)
-            Stepper(value: $draft.longBreakInterval, in: 2...12) {
-                LabeledContent("长休息间隔") { Text("每 \(draft.longBreakInterval) 个番茄") }
+    // MARK: - Header
+
+    private var headerBar: some View {
+        ZStack {
+            Text("我的")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+            HStack {
+                Spacer()
+                Button {
+                    showPrivacy = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                }
+                .accessibilityLabel("隐私说明")
             }
+            .padding(.horizontal, 22)
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity)
+        .background(FocusFlowTheme.banner.ignoresSafeArea(edges: .top))
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(FocusFlowTheme.secondaryText)
+            .padding(.leading, 8)
+            .padding(.top, 6)
+    }
+
+    // MARK: - Cards
+
+    private var accountCard: some View {
+        SettingsCard {
+            Button { showPrivacy = true } label: {
+                SettingsRow(
+                    icon: "person.crop.circle.fill",
+                    tint: FocusFlowTheme.coral,
+                    title: "账号",
+                    trailingText: "本地模式 · 无需登录"
+                )
+            }
+            .buttonStyle(.plain)
+            rowDivider
+            Button { showBackupDialog = true } label: {
+                SettingsRow(
+                    icon: "cloud.fill",
+                    tint: FocusFlowTheme.sky,
+                    title: "备份 | 恢复",
+                    subtitle: "导出或导入 JSON 备份文件"
+                )
+            }
+            .buttonStyle(.plain)
+            rowDivider
+            Button { isHistoryPresented = true } label: {
+                SettingsRow(
+                    icon: "clock.arrow.circlepath",
+                    tint: FocusFlowTheme.sky,
+                    title: "历史时间轴",
+                    subtitle: "查看全部专注记录"
+                )
+            }
+            .buttonStyle(.plain)
+            rowDivider
+            Button { showClearConfirmation = true } label: {
+                SettingsRow(
+                    icon: "trash.fill",
+                    tint: FocusFlowTheme.coral,
+                    title: "清除全部数据"
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
-    private var automationSection: some View {
-        Section {
-            Toggle("专注后自动开始休息", isOn: $draft.autoStartBreak)
-            Toggle("休息后连续开始专注", isOn: $draft.continuousFocus)
-            Toggle("计时时保持屏幕唤醒", isOn: $draft.keepScreenAwake)
-            } header: {
-                Text("专注流程")
-        } footer: {
-            Text("后台和锁屏后的剩余时间始终按系统日期重新计算，不依赖每秒定时器。")
-        }
-    }
-
-    private var reminderSection: some View {
-        Section {
-            Toggle("本地通知", isOn: $draft.notificationsEnabled)
-            Toggle("系统提示音", isOn: $draft.soundEnabled)
-            Toggle("震动反馈", isOn: $draft.hapticsEnabled)
-            Toggle("中文语音播报", isOn: $draft.voiceEnabled)
-            Button {
-                container.speech.preview()
-            } label: {
-                Label("试听语音", systemImage: "speaker.wave.2.fill")
-            }
-            .disabled(!draft.voiceEnabled)
-            .accessibilityHint("播放一段中文完成提醒")
-            } header: {
-    Text("提醒与反馈")
-        } footer: {
-            Text("提示音和震动均调用 iOS 系统能力；白噪音由程序实时生成。")
-        }
-    }
-
-    private var appearanceSection: some View {
-        Section("外观与清单") {
-            Picker("App 外观", selection: $draft.appearance) {
-                Text("跟随系统").tag(AppAppearance.system)
-                Text("浅色").tag(AppAppearance.light)
-                Text("深色").tag(AppAppearance.dark)
-            }
+    private var appearanceCard: some View {
+        SettingsCard {
             NavigationLink {
-                SettingsListManagerView()
+                AppearanceForm(draft: $draft)
             } label: {
-                Label("自定义清单", systemImage: "folder.badge.gearshape")
+                SettingsRow(
+                    icon: "tshirt.fill",
+                    tint: FocusFlowTheme.coral,
+                    title: "背景海报和外观",
+                    subtitle: "浅色 | 深色 | 跟随系统"
+                )
             }
+            .buttonStyle(.plain)
+            rowDivider
+            SettingsRow(
+                icon: "paintpalette.fill",
+                tint: FocusFlowTheme.coral,
+                title: "主题颜色搭配",
+                subtitle: "主题蓝紫",
+                dotColor: FocusFlowTheme.accent,
+                showsChevron: false
+            )
+            rowDivider
+            Button { isListManagerPresented = true } label: {
+                SettingsRow(
+                    icon: "folder.fill.badge.gearshape",
+                    tint: FocusFlowTheme.sky,
+                    title: "清单管理",
+                    subtitle: "新建、重命名、删除清单"
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
-    private var dataSection: some View {
-        Section {
-            Button(action: prepareExport) {
-                Label("导出 JSON 备份", systemImage: "square.and.arrow.up")
-            }
-            Button {
-                isImporting = true
+    private var focusCard: some View {
+        SettingsCard {
+            NavigationLink {
+                TimerSettingsForm(draft: $draft)
             } label: {
-                Label("导入 JSON 备份", systemImage: "square.and.arrow.down")
+                SettingsRow(
+                    icon: "timer",
+                    tint: FocusFlowTheme.accent,
+                    title: "计时时长与自动化",
+                    subtitle: "专注 / 休息时长、自动衔接"
+                )
             }
-            Button(role: .destructive) {
-                showClearConfirmation = true
+            .buttonStyle(.plain)
+            rowDivider
+            NavigationLink {
+                ReminderSettingsForm(draft: $draft, onPreviewVoice: { container.speech.preview() })
             } label: {
-                Label("清除全部数据", systemImage: "trash")
+                SettingsRow(
+                    icon: "bell.badge.fill",
+                    tint: FocusFlowTheme.amber,
+                    title: "提醒与反馈",
+                    subtitle: "通知、提示音、震动、语音"
+                )
             }
-            } header: {
-    Text("数据")
-        } footer: {
-            Text("数据只保存在本机 Application Support 目录。卸载 App 会删除这些数据，请定期备份。")
+            .buttonStyle(.plain)
         }
     }
 
-    private var aboutSection: some View {
-        Section("关于") {
-            LabeledContent("版本", value: versionText)
-            Button {
-                showPrivacy = true
-            } label: {
-                Label("隐私说明", systemImage: "hand.raised.fill")
-            }
-            LabeledContent("联网") { Text("无需联网") }
-            LabeledContent("账号") { Text("无需登录") }
-        }
+    private var rowDivider: some View {
+        Divider().padding(.leading, 62)
     }
 
-    private func durationStepper(
-        _ title: String,
-        keyPath: WritableKeyPath<AppSettings, TimeInterval>,
-        range: ClosedRange<Int>
-    ) -> some View {
-        Stepper(value: Binding(
-            get: { max(Int(draft[keyPath: keyPath] / 60), range.lowerBound) },
-            set: { draft[keyPath: keyPath] = TimeInterval($0 * 60) }
-        ), in: range) {
-            LabeledContent(title) {
-                Text("\(Int(draft[keyPath: keyPath] / 60)) 分钟")
-            }
+    private var versionFooter: some View {
+        HStack {
+            Spacer()
+            Text("FocusFlow \(versionText) · 无需联网 · 无需登录")
+                .font(.caption2)
+                .foregroundStyle(FocusFlowTheme.tertiaryText)
+            Spacer()
         }
+        .padding(.top, 16)
+    }
+
+    // MARK: - Actions
+
+    private var errorBinding: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+
+    private var successBinding: Binding<Bool> {
+        Binding(
+            get: { successMessage != nil },
+            set: { if !$0 { successMessage = nil } }
+        )
     }
 
     private func prepareExport() {
@@ -240,149 +333,165 @@ struct SettingsView: View {
     }
 }
 
-private struct SettingsListManagerView: View {
-    @EnvironmentObject private var container: AppContainer
-    @State private var editingList: TaskList?
-    @State private var listToDelete: TaskList?
+// MARK: - 行与卡片组件
+
+private struct SettingsRow: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    var subtitle: String? = nil
+    var trailingText: String? = nil
+    var dotColor: Color? = nil
+    var showsChevron: Bool = true
 
     var body: some View {
-        List {
-            Section {
-                Label("收集箱", systemImage: "tray.fill")
-                Label("今天", systemImage: "sun.max.fill")
-                Label("计划", systemImage: "calendar")
-                Label("已完成", systemImage: "checkmark.circle.fill")
-            } header: {
-                Text("内置视图")
-            } footer: {
-                Text("内置视图不会被删除。")
-            }
-
-            Section("自定义清单") {
-                ForEach(container.store.lists.filter { !$0.isArchived }) { list in
-                    Button { editingList = list } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: list.iconName)
-                                .foregroundStyle(Color(hex: list.colorHex) ?? FocusFlowTheme.accent)
-                                .frame(width: 28)
-                            Text(list.name).foregroundStyle(FocusFlowTheme.primaryText)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(FocusFlowTheme.tertiaryText)
-                        }
-                    }
-                    .swipeActions {
-                        Button(role: .destructive) { listToDelete = list } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                    }
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 21))
+                .foregroundStyle(tint)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(FocusFlowTheme.primaryText)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(FocusFlowTheme.secondaryText)
                 }
             }
-        }
-        .navigationTitle("清单")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { editingList = TaskList(name: "") } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("创建清单")
+            Spacer(minLength: 8)
+            if let trailingText {
+                Text(trailingText)
+                    .font(.footnote)
+                    .foregroundStyle(FocusFlowTheme.secondaryText)
+            }
+            if let dotColor {
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 22, height: 22)
+            }
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color(uiColor: .systemGray3))
             }
         }
-        .sheet(item: $editingList) { list in
-            SettingsListEditorView(list: list) { container.store.upsertList($0) }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 15)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SettingsCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content
         }
-        .confirmationDialog(
-            "删除这个清单？",
-            isPresented: Binding(
-                get: { listToDelete != nil },
-                set: { if !$0 { listToDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("删除清单", role: .destructive) {
-                if let list = listToDelete { container.store.deleteList(id: list.id) }
-                listToDelete = nil
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(FocusFlowTheme.cardBackground)
+        )
+    }
+}
+
+// MARK: - 子设置页
+
+private struct TimerSettingsForm: View {
+    @Binding var draft: AppSettings
+
+    var body: some View {
+        Form {
+            Section("默认计时") {
+                durationStepper("专注", keyPath: \.defaultFocusDuration, range: 1...180)
+                durationStepper("短休息", keyPath: \.shortBreakDuration, range: 1...60)
+                durationStepper("长休息", keyPath: \.longBreakDuration, range: 1...120)
+                Stepper(value: $draft.longBreakInterval, in: 2...12) {
+                    LabeledContent("长休息间隔") { Text("每 \(draft.longBreakInterval) 个番茄") }
+                }
             }
-            Button("取消", role: .cancel) { listToDelete = nil }
-        } message: {
-            Text("清单内的任务会保留，并移回收集箱。")
+            Section {
+                Toggle("专注后自动开始休息", isOn: $draft.autoStartBreak)
+                Toggle("休息后连续开始专注", isOn: $draft.continuousFocus)
+                Toggle("计时时保持屏幕唤醒", isOn: $draft.keepScreenAwake)
+            } header: {
+                Text("自动化")
+            } footer: {
+                Text("后台和锁屏后的剩余时间始终按系统日期重新计算，不依赖每秒定时器。")
+            }
+        }
+        .navigationTitle("计时与自动化")
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(FocusFlowTheme.accent)
+    }
+
+    private func durationStepper(
+        _ title: String,
+        keyPath: WritableKeyPath<AppSettings, TimeInterval>,
+        range: ClosedRange<Int>
+    ) -> some View {
+        Stepper(value: Binding(
+            get: { max(Int(draft[keyPath: keyPath] / 60), range.lowerBound) },
+            set: { draft[keyPath: keyPath] = TimeInterval($0 * 60) }
+        ), in: range) {
+            LabeledContent(title) {
+                Text("\(Int(draft[keyPath: keyPath] / 60)) 分钟")
+            }
         }
     }
 }
 
-private struct SettingsListEditorView: View {
-    @Environment(\.dismiss) private var dismiss
-    let original: TaskList
-    let onSave: (TaskList) -> Void
-
-    @State private var name: String
-    @State private var icon: String
-    @State private var colorHex: String
-
-    private let icons = ["list.bullet", "briefcase.fill", "book.fill", "house.fill", "heart.fill", "figure.run", "lightbulb.fill", "star.fill"]
-    private let colors = ["#22B88A", "#F06445", "#3978E8", "#F0A62E", "#8466DB", "#E04D77"]
-
-    init(list: TaskList, onSave: @escaping (TaskList) -> Void) {
-        original = list
-        self.onSave = onSave
-        _name = State(initialValue: list.name)
-        _icon = State(initialValue: list.iconName)
-        _colorHex = State(initialValue: list.colorHex)
-    }
+private struct ReminderSettingsForm: View {
+    @Binding var draft: AppSettings
+    let onPreviewVoice: () -> Void
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("名称") { TextField("例如：工作", text: $name) }
-                Section("图标") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 14) {
-                        ForEach(icons, id: \.self) { value in
-                            Button { icon = value } label: {
-                                Image(systemName: value)
-                                    .font(.title3)
-                                    .frame(width: 44, height: 44)
-                                    .foregroundStyle(icon == value ? .white : FocusFlowTheme.secondaryText)
-                                    .background(Circle().fill(icon == value ? (Color(hex: colorHex) ?? FocusFlowTheme.accent) : Color(uiColor: .tertiarySystemFill)))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(icon == value ? .isSelected : [])
-                        }
-                    }
-                    .padding(.vertical, 6)
+        Form {
+            Section {
+                Toggle("本地通知", isOn: $draft.notificationsEnabled)
+                Toggle("系统提示音", isOn: $draft.soundEnabled)
+                Toggle("震动反馈", isOn: $draft.hapticsEnabled)
+                Toggle("中文语音播报", isOn: $draft.voiceEnabled)
+                Button {
+                    onPreviewVoice()
+                } label: {
+                    Label("试听语音", systemImage: "speaker.wave.2.fill")
                 }
-                Section("颜色") {
-                    HStack {
-                        ForEach(colors, id: \.self) { value in
-                            Button { colorHex = value } label: {
-                                Circle()
-                                    .fill(Color(hex: value) ?? FocusFlowTheme.accent)
-                                    .frame(width: 32, height: 32)
-                                    .overlay(Circle().stroke(.primary, lineWidth: colorHex == value ? 2 : 0).padding(-3))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("选择颜色")
-                            .accessibilityAddTraits(colorHex == value ? .isSelected : [])
-                        }
-                    }
-                }
-            }
-            .navigationTitle(original.name.isEmpty ? "新建清单" : "编辑清单")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") {
-                        var result = original
-                        result.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        result.iconName = icon
-                        result.colorHex = colorHex
-                        result.updatedAt = Date()
-                        onSave(result)
-                        dismiss()
-                    }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+                .disabled(!draft.voiceEnabled)
+            } header: {
+                Text("提醒与反馈")
+            } footer: {
+                Text("提示音和震动均调用 iOS 系统能力；白噪音由程序实时生成。")
             }
         }
+        .navigationTitle("提醒与反馈")
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(FocusFlowTheme.accent)
+    }
+}
+
+private struct AppearanceForm: View {
+    @Binding var draft: AppSettings
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("App 外观", selection: $draft.appearance) {
+                    Text("跟随系统").tag(AppAppearance.system)
+                    Text("浅色").tag(AppAppearance.light)
+                    Text("深色").tag(AppAppearance.dark)
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } footer: {
+                Text("待办卡片使用内置渐变背景，不联网加载图片素材。")
+            }
+        }
+        .navigationTitle("背景与外观")
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(FocusFlowTheme.accent)
     }
 }
 
@@ -405,19 +514,11 @@ private struct PrivacyView: View {
             }
             .navigationTitle("隐私说明")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
         }
-    }
-}
-
-private extension Color {
-    init?(hex: String) {
-        let value = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        guard value.count == 6, let integer = UInt64(value, radix: 16) else { return nil }
-        self.init(
-            red: Double((integer >> 16) & 0xff) / 255,
-            green: Double((integer >> 8) & 0xff) / 255,
-            blue: Double(integer & 0xff) / 255
-        )
     }
 }

@@ -73,6 +73,38 @@ init(
             .store(in: &cancellables)
 
         synchronizeTaskReminders(from: store.data)
+        seedDefaultContentIfNeeded()
+    }
+
+    /// 首次启动时写入默认清单和示例任务，避免首屏一片空白。
+    private func seedDefaultContentIfNeeded() {
+        guard store.tasks.isEmpty, store.lists.isEmpty, store.records.isEmpty else { return }
+
+        let selfStudy = TaskList(name: "自考", iconName: "book.fill", colorHex: "#4A90D9", sortOrder: 0)
+        let skills = TaskList(name: "技能", iconName: "hammer.fill", colorHex: "#2CA9E1", sortOrder: 1)
+        let language = TaskList(name: "语言", iconName: "character.book.closed.fill", colorHex: "#9B8CD9", sortOrder: 2)
+        store.upsertList(selfStudy)
+        store.upsertList(skills)
+        store.upsertList(language)
+
+        let titles: [(UUID?, String)] = [
+            (language.id, "背单词"),
+            (selfStudy.id, "英语"),
+            (selfStudy.id, "高级语言"),
+            (selfStudy.id, "操作系统"),
+            (language.id, "日语"),
+            (language.id, "表达训练")
+        ]
+        for (index, item) in titles.enumerated() {
+            let task = TaskItem(
+                listID: item.0,
+                title: item.1,
+                estimatedFocusDuration: 25 * 60,
+                estimatedPomodoros: 1,
+                sortOrder: index
+            )
+            store.upsertTask(task)
+        }
     }
 
     var appearanceScheme: ColorScheme? {
