@@ -101,17 +101,19 @@ struct SettingsView: View {
     }
 
     private var automationSection: some View {
-        Section("专注流程") {
+        Section {
             Toggle("专注后自动开始休息", isOn: $draft.autoStartBreak)
             Toggle("休息后连续开始专注", isOn: $draft.continuousFocus)
             Toggle("计时时保持屏幕唤醒", isOn: $draft.keepScreenAwake)
+            } header: {
+                Text("专注流程")
         } footer: {
             Text("后台和锁屏后的剩余时间始终按系统日期重新计算，不依赖每秒定时器。")
         }
     }
 
     private var reminderSection: some View {
-        Section("提醒与反馈") {
+        Section {
             Toggle("本地通知", isOn: $draft.notificationsEnabled)
             Toggle("系统提示音", isOn: $draft.soundEnabled)
             Toggle("震动反馈", isOn: $draft.hapticsEnabled)
@@ -123,6 +125,8 @@ struct SettingsView: View {
             }
             .disabled(!draft.voiceEnabled)
             .accessibilityHint("播放一段中文完成提醒")
+            } header: {
+    Text("提醒与反馈")
         } footer: {
             Text("提示音和震动均调用 iOS 系统能力；白噪音由程序实时生成。")
         }
@@ -144,7 +148,7 @@ struct SettingsView: View {
     }
 
     private var dataSection: some View {
-        Section("数据") {
+        Section {
             Button(action: prepareExport) {
                 Label("导出 JSON 备份", systemImage: "square.and.arrow.up")
             }
@@ -158,6 +162,8 @@ struct SettingsView: View {
             } label: {
                 Label("清除全部数据", systemImage: "trash")
             }
+            } header: {
+    Text("数据")
         } footer: {
             Text("数据只保存在本机 Application Support 目录。卸载 App 会删除这些数据，请定期备份。")
         }
