@@ -72,28 +72,8 @@ struct TodayView: View {
                 prompt: "搜索任务、备注或清单"
             )
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if viewModel.visibleTasks.count > 1 {
-                        EditButton()
-                    }
-                }
-
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    filterMenu
-
-                    Button {
-                        viewModel.isListManagerPresented = true
-                    } label: {
-                        Image(systemName: "folder.badge.gearshape")
-                    }
-                    .accessibilityLabel("管理清单")
-
-                    Button(action: viewModel.presentNewTask) {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("添加任务")
-                }
-            }
+    todayToolbarContent
+}
             .tint(FocusFlowTheme.accent)
             .onAppear {
                 viewModel.bind(to: container.store)
@@ -131,6 +111,30 @@ struct TodayView: View {
         }
     }
 
+    @ToolbarContentBuilder
+private var todayToolbarContent: some ToolbarContent {
+    ToolbarItem(placement: .navigationBarLeading) {
+        if viewModel.visibleTasks.count > 1 {
+            EditButton()
+        }
+    }
+
+    ToolbarItemGroup(placement: .navigationBarTrailing) {
+        filterMenu
+
+        Button {
+            viewModel.isListManagerPresented = true
+        } label: {
+            Image(systemName: "folder.badge.gearshape")
+        }
+        .accessibilityLabel("管理清单")
+
+        Button(action: viewModel.presentNewTask) {
+            Image(systemName: "plus")
+        }
+        .accessibilityLabel("添加任务")
+    }
+}
     private var filterBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
