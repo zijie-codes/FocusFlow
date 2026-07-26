@@ -1,6 +1,7 @@
 import SwiftUI
 
 @main
+@MainActor
 struct FocusFlowApp: App {
     @UIApplicationDelegateAdaptor(FocusFlowAppDelegate.self) private var appDelegate
     @StateObject private var container = AppContainer()

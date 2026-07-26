@@ -24,14 +24,25 @@ final class AppContainer: ObservableObject {
     private var lastFocusTaskID: UUID?
     private var knownReminderTaskIDs = Set<UUID>()
 
-    init(
-        store: AppStore = AppStore(),
-        notifications: NotificationService = NotificationService(),
-        feedback: FeedbackService = FeedbackService(),
-        speech: SpeechService = SpeechService(),
-        whiteNoise: WhiteNoiseService = WhiteNoiseService(),
-        backup: BackupService = BackupService()
-    ) {
+    convenience init() {
+    self.init(
+        store: AppStore(),
+        notifications: NotificationService(),
+        feedback: FeedbackService(),
+        speech: SpeechService(),
+        whiteNoise: WhiteNoiseService(),
+        backup: BackupService()
+    )
+}
+
+init(
+    store: AppStore,
+    notifications: NotificationService,
+    feedback: FeedbackService,
+    speech: SpeechService,
+    whiteNoise: WhiteNoiseService,
+    backup: BackupService
+) {
         self.store = store
         self.notifications = notifications
         self.feedback = feedback
