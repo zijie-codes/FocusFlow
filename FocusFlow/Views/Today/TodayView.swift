@@ -71,9 +71,10 @@ struct TodayView: View {
                 placement: .navigationBarDrawer(displayMode: .automatic),
                 prompt: "搜索任务、备注或清单"
             )
-            .toolbar {
-    todayToolbarContent
-}
+            .navigationBarItems(
+    leading: leadingNavigationItem,
+    trailing: trailingNavigationItems
+)
             .tint(FocusFlowTheme.accent)
             .onAppear {
                 viewModel.bind(to: container.store)
@@ -111,30 +112,33 @@ struct TodayView: View {
         }
     }
 
-    @ToolbarContentBuilder
-private var todayToolbarContent: some ToolbarContent {
-    ToolbarItem(placement: .navigationBarLeading) {
-        if viewModel.visibleTasks.count > 1 {
-            EditButton()
+    private var leadingNavigationItem: some View {
+        Group {
+            if viewModel.visibleTasks.count > 1 {
+                EditButton()
+            } else {
+                EmptyView()
+            }
         }
     }
 
-    ToolbarItemGroup(placement: .navigationBarTrailing) {
-        filterMenu
+    private var trailingNavigationItems: some View {
+        HStack(spacing: 16) {
+            filterMenu
 
-        Button {
-            viewModel.isListManagerPresented = true
-        } label: {
-            Image(systemName: "folder.badge.gearshape")
-        }
-        .accessibilityLabel("管理清单")
+            Button {
+                viewModel.isListManagerPresented = true
+            } label: {
+                Image(systemName: "folder.badge.gearshape")
+            }
+            .accessibilityLabel("管理清单")
 
-        Button(action: viewModel.presentNewTask) {
-            Image(systemName: "plus")
+            Button(action: viewModel.presentNewTask) {
+                Image(systemName: "plus")
+            }
+            .accessibilityLabel("添加任务")
         }
-        .accessibilityLabel("添加任务")
     }
-}
     private var filterBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
