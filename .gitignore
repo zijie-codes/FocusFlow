@@ -1,0 +1,36 @@
+# macOS and Windows metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Xcode user state and generated output
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcresult
+*.xcarchive
+*.dSYM
+*.dSYM.zip
+
+# XcodeGen output (regenerate with `xcodegen generate`)
+/FocusFlow.xcodeproj/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Distribution and signing material
+*.ipa
+/FocusFlow-source.zip
+/FocusFlow-source.zip.sha256
+*.mobileprovision
+*.p12
+*.cer
+
+# Local configuration
+.env
+.env.*
+!.env.example

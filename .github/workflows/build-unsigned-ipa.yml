@@ -1,0 +1,154 @@
+name: Build and test unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: focusflow-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and package
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Validate repository
+        run: python3 scripts/validate-project.py
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Select an available iPhone simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SIMULATOR_UDID="$(
+            xcrun simctl list devices available -j | python3 -c '
+          import json
+          import re
+          import sys
+
+          payload = json.load(sys.stdin)
+          candidates = []
+
+          for runtime, devices in payload.get("devices", {}).items():
+              if ".iOS-" not in runtime:
+                  continue
+
+              match = re.search(r"iOS-(\d+)(?:-(\d+))?", runtime)
+              version = tuple(int(part or 0) for part in match.groups()) if match else (0, 0)
+
+              for device in devices:
+                  if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
+                      candidates.append((version, device["name"], device["udid"]))
+
+          if not candidates:
+              raise SystemExit("No available iPhone simulator was found")
+
+          candidates.sort(reverse=True)
+          print(candidates[0][2])
+          '
+          )"
+
+          echo "Using iPhone simulator: ${SIMULATOR_UDID}"
+          echo "SIMULATOR_UDID=${SIMULATOR_UDID}" >> "${GITHUB_ENV}"
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcrun simctl boot "${SIMULATOR_UDID}" 2>/dev/null || true
+          xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
+
+          xcodebuild \
+            -project FocusFlow.xcodeproj \
+            -scheme FocusFlow \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+            -derivedDataPath build/DerivedData-simulator \
+            -resultBundlePath build/TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            test | tee build/test.log
+
+      - name: Build unsigned device app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          xcodebuild \
+            -project FocusFlow.xcodeproj \
+            -scheme FocusFlow \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build/DerivedData-device \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build | tee build/device-build.log
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="build/DerivedData-device/Build/Products/Release-iphoneos/FocusFlow.app"
+          PACKAGE_ROOT="build/unsigned-package"
+
+          if [[ ! -d "${APP_PATH}" ]]; then
+            echo "Expected app bundle was not produced at ${APP_PATH}" >&2
+            exit 1
+          fi
+
+          mkdir -p "${PACKAGE_ROOT}/Payload"
+          /usr/bin/ditto "${APP_PATH}" "${PACKAGE_ROOT}/Payload/FocusFlow.app"
+
+          (
+            cd "${PACKAGE_ROOT}"
+            /usr/bin/zip -qry "../FocusFlow-unsigned.ipa" Payload
+          )
+
+          test -f build/FocusFlow-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FocusFlow-unsigned-ipa
+          path: build/FocusFlow-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FocusFlow-build-diagnostics
+          path: |
+            build/test.log
+            build/device-build.log
+            build/TestResults.xcresult
+          if-no-files-found: warn
+          retention-days: 7
