@@ -8,122 +8,135 @@ struct TodayView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    TodaySummaryCard(viewModel: viewModel)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
+            taskList
+                .navigationTitle(viewModel.navigationTitle)
+                .searchable(
+                    text: $viewModel.searchText,
+                    placement: .navigationBarDrawer(displayMode: .automatic),
+                    prompt: "搜索任务、备注或清单"
+                )
+                .toolbar { todayToolbar }
+                .tint(FocusFlowTheme.accent)
+                .onAppear {
+                    viewModel.bind(to: container.store)
                 }
+                .sheet(isPresented: $viewModel.isTaskEditorPresented) {
+                    TaskEditorView(
+                        task: viewModel.editingTask,
+                        lists: viewModel.lists,
+                        onSave: viewModel.save
+                    )
+                }
+                .sheet(isPresented: $viewModel.isListManagerPresented) {
+                    TaskListManagerView(
+                        lists: viewModel.lists,
+                        onSave: viewModel.saveList,
+                        onDelete: viewModel.deleteList
+                    )
+                }
+                .confirmationDialog(
+                    "删除这项任务？",
+                    isPresented: isDeleteConfirmationPresented,
+                    titleVisibility: .visible
+                ) {
+                    Button("删除任务", role: .destructive, action: confirmPendingDeletion)
+                    Button("取消", role: .cancel) { pendingDeletion = nil }
+                } message: {
+                    Text("此操作需要确认，以避免滑动误删。")
+                }
+        }
+    }
 
-                Section {
-                    filterBar
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                }
+    private var taskList: some View {
+        List {
+            summarySection
+            filterSection
+            tasksSection
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(FocusFlowTheme.pageBackground)
+    }
 
-                Section {
-                    if viewModel.visibleTasks.isEmpty {
-                        EmptyStateView(
-                            systemImage: viewModel.completionScope == .planned ? "checklist" : "sparkles",
-                            title: viewModel.emptyTitle,
-                            message: viewModel.emptyMessage,
-                            actionTitle: viewModel.completionScope == .planned ? "添加任务" : nil,
-                            action: viewModel.completionScope == .planned ? viewModel.presentNewTask : nil
-                        )
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                    } else {
-                        ForEach(viewModel.visibleTasks) { task in
-                            TaskRowView(
-                                task: task,
-                                list: viewModel.list(for: task),
-                                onToggleCompletion: { viewModel.toggleCompletion(of: task) },
-                                onEdit: { viewModel.presentEditor(for: task) },
-                                onDelete: { pendingDeletion = task },
-                                onPostpone: task.isCompleted ? nil : { viewModel.postponeToTomorrow(task) }
-                            )
-                            .listRowInsets(EdgeInsets(top: 5, leading: 18, bottom: 5, trailing: 16))
-                            .listRowBackground(FocusFlowTheme.cardBackground)
-                        }
-                        .onMove(perform: viewModel.moveVisibleTasks)
-                    }
-                } header: {
-                    HStack {
-                        Text(viewModel.completionScope == .planned ? "待办任务" : "完成记录")
-                        Spacer()
-                        if !viewModel.visibleTasks.isEmpty {
-                            Text("\(viewModel.visibleTasks.count) 项")
-                                .font(.caption)
-                                .textCase(nil)
-                        }
-                    }
-                }
+    private var summarySection: some View {
+        Section {
+            TodaySummaryCard(viewModel: viewModel)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+    }
+
+    private var filterSection: some View {
+        Section {
+            filterBar
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+    }
+
+    private var tasksSection: some View {
+        Section {
+            if viewModel.visibleTasks.isEmpty {
+                emptyState
+            } else {
+                taskRows
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(FocusFlowTheme.pageBackground)
-            .navigationTitle(viewModel.navigationTitle)
-            .searchable(
-                text: $viewModel.searchText,
-                placement: .navigationBarDrawer(displayMode: .automatic),
-                prompt: "搜索任务、备注或清单"
+        } header: {
+            tasksHeader
+        }
+    }
+
+    private var emptyState: some View {
+        EmptyStateView(
+            systemImage: viewModel.completionScope == .planned ? "checklist" : "sparkles",
+            title: viewModel.emptyTitle,
+            message: viewModel.emptyMessage,
+            actionTitle: viewModel.completionScope == .planned ? "添加任务" : nil,
+            action: viewModel.completionScope == .planned ? viewModel.presentNewTask : nil
+        )
+        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    private var taskRows: some View {
+        ForEach(viewModel.visibleTasks) { task in
+            TaskRowView(
+                task: task,
+                list: viewModel.list(for: task),
+                onToggleCompletion: { viewModel.toggleCompletion(of: task) },
+                onEdit: { viewModel.presentEditor(for: task) },
+                onDelete: { pendingDeletion = task },
+                onPostpone: task.isCompleted ? nil : { viewModel.postponeToTomorrow(task) }
             )
-            .navigationBarItems(
-    leading: leadingNavigationItem,
-    trailing: trailingNavigationItems
-)
-            .tint(FocusFlowTheme.accent)
-            .onAppear {
-                viewModel.bind(to: container.store)
-            }
-            .sheet(isPresented: $viewModel.isTaskEditorPresented) {
-                TaskEditorView(
-                    task: viewModel.editingTask,
-                    lists: viewModel.lists,
-                    onSave: viewModel.save
-                )
-            }
-            .sheet(isPresented: $viewModel.isListManagerPresented) {
-                TaskListManagerView(
-                    lists: viewModel.lists,
-                    onSave: viewModel.saveList,
-                    onDelete: viewModel.deleteList
-                )
-            }
-            .confirmationDialog(
-                "删除这项任务？",
-                isPresented: Binding(
-                    get: { pendingDeletion != nil },
-                    set: { if !$0 { pendingDeletion = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("删除任务", role: .destructive) {
-                    if let task = pendingDeletion { viewModel.delete(task) }
-                    pendingDeletion = nil
-                }
-                Button("取消", role: .cancel) { pendingDeletion = nil }
-            } message: {
-                Text("此操作需要确认，以避免滑动误删。")
+            .listRowInsets(EdgeInsets(top: 5, leading: 18, bottom: 5, trailing: 16))
+            .listRowBackground(FocusFlowTheme.cardBackground)
+        }
+        .onMove(perform: viewModel.moveVisibleTasks)
+    }
+
+    private var tasksHeader: some View {
+        HStack {
+            Text(viewModel.completionScope == .planned ? "待办任务" : "完成记录")
+            Spacer()
+            if !viewModel.visibleTasks.isEmpty {
+                Text("\(viewModel.visibleTasks.count) 项")
+                    .font(.caption)
+                    .textCase(nil)
             }
         }
     }
 
-    private var leadingNavigationItem: some View {
-        Group {
+    @ToolbarContentBuilder
+    private var todayToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
             if viewModel.visibleTasks.count > 1 {
                 EditButton()
-            } else {
-                EmptyView()
             }
         }
-    }
-
-    private var trailingNavigationItems: some View {
-        HStack(spacing: 16) {
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
             filterMenu
 
             Button {
@@ -139,6 +152,21 @@ struct TodayView: View {
             .accessibilityLabel("添加任务")
         }
     }
+
+    private var isDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { pendingDeletion != nil },
+            set: { if !$0 { pendingDeletion = nil } }
+        )
+    }
+
+    private func confirmPendingDeletion() {
+        if let task = pendingDeletion {
+            viewModel.delete(task)
+        }
+        pendingDeletion = nil
+    }
+
     private var filterBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
