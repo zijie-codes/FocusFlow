@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum FocusFlowTheme {
-    static let accent = Color(red: 0.96, green: 0.39, blue: 0.27)
+    static let accent = Color(red: 0.94, green: 0.32, blue: 0.23)
     static let accentSoft = Color(red: 1.00, green: 0.91, blue: 0.87)
     static let mint = Color(red: 0.18, green: 0.67, blue: 0.55)
     static let sky = Color(red: 0.26, green: 0.55, blue: 0.92)
@@ -16,8 +16,8 @@ enum FocusFlowTheme {
     static let tertiaryText = Color(uiColor: .tertiaryLabel)
     static let separator = Color(uiColor: .separator).opacity(0.55)
 
-    static let cornerRadius: CGFloat = 8
-    static let compactCornerRadius: CGFloat = 6
+    static let cornerRadius: CGFloat = 14
+    static let compactCornerRadius: CGFloat = 10
     static let horizontalPadding: CGFloat = 18
 
     static let categoryColors: [Color] = [accent, mint, sky, amber, violet]
@@ -63,9 +63,9 @@ struct PrimaryActionButtonStyle: ButtonStyle {
             .font(.headline)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 15)
             .background(
-                RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous)
+                Capsule()
                     .fill(color.opacity(configuration.isPressed ? 0.78 : 1))
             )
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
@@ -242,5 +242,51 @@ struct CircularProgressView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("完成进度")
         .accessibilityValue("\(Int(min(max(progress, 0), 1) * 100))%")
+    }
+}
+
+/// 番茄计数点：实心为已完成，浅色为剩余，超过上限时以数字补充。
+struct PomodoroDots: View {
+    let completed: Int
+    let estimated: Int
+
+    private let maxDots = 6
+
+    private var dotCount: Int { min(max(estimated, 1), maxDots) }
+    private var filledCount: Int { min(max(completed, 0), dotCount) }
+
+    var body: some View {
+        HStack(spacing: 3.5) {
+            ForEach(0..<dotCount, id: \.self) { index in
+                Circle()
+                    .fill(index < filledCount ? FocusFlowTheme.accent : FocusFlowTheme.accent.opacity(0.18))
+                    .frame(width: 6, height: 6)
+            }
+            if estimated > maxDots {
+                Text("×\(estimated)")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(FocusFlowTheme.secondaryText)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("番茄进度，已完成 \(completed) 个，计划 \(estimated) 个")
+    }
+}
+
+struct PlayCircleButton: View {
+    var size: CGFloat = 36
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "play.fill")
+                .font(.system(size: size * 0.38, weight: .bold))
+                .foregroundStyle(.white)
+                .offset(x: size * 0.03)
+                .frame(width: size, height: size)
+                .background(Circle().fill(FocusFlowTheme.accent))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("开始专注")
     }
 }

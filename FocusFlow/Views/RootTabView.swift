@@ -8,13 +8,15 @@ enum RootTab: Hashable {
 }
 
 struct RootTabView: View {
+    @EnvironmentObject private var container: AppContainer
+    @EnvironmentObject private var timer: TimerEngine
     @State private var selection: RootTab = .today
 
     var body: some View {
         TabView(selection: $selection) {
             TodayView()
                 .tabItem {
-                    Label("今天", systemImage: selection == .today ? "checkmark.circle.fill" : "checkmark.circle")
+                    Label("待办", systemImage: selection == .today ? "checkmark.circle.fill" : "checkmark.circle")
                 }
                 .tag(RootTab.today)
 
@@ -37,5 +39,19 @@ struct RootTabView: View {
                 .tag(RootTab.settings)
         }
         .tint(FocusFlowTheme.accent)
+        .fullScreenCover(isPresented: activeSessionBinding) {
+            FocusSessionView()
+                .environmentObject(container)
+                .environmentObject(container.timer)
+                .environmentObject(container.whiteNoise)
+        }
+    }
+
+    /// 有活动计时会话时自动全屏；会话结束（完成/放弃）后自动关闭。
+    private var activeSessionBinding: Binding<Bool> {
+        Binding(
+            get: { timer.hasActiveSession },
+            set: { _ in }
+        )
     }
 }

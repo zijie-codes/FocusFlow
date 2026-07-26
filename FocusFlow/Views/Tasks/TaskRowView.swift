@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 
+/// 番茄ToDo 风格的任务卡片行：左侧完成圈、中间标题与元信息、右侧红色播放键。
 struct TaskRowView: View {
     let task: TaskItem
     var list: TaskList?
@@ -8,6 +9,8 @@ struct TaskRowView: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
     var onPostpone: (() -> Void)? = nil
+    var startDisabled: Bool = false
+    var onStartFocus: (() -> Void)? = nil
 
     private var priorityColor: Color {
         switch task.priority {
@@ -19,48 +22,17 @@ struct TaskRowView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            Button(action: onToggleCompletion) {
-                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 25, weight: .medium))
-                    .foregroundStyle(task.isCompleted ? FocusFlowTheme.mint : priorityColor)
-                    .symbolRenderingMode(.hierarchical)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为已完成")
-
-            Button(action: onEdit) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(task.title)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(task.isCompleted ? FocusFlowTheme.secondaryText : FocusFlowTheme.primaryText)
-                        .strikethrough(task.isCompleted, color: FocusFlowTheme.secondaryText)
-                        .multilineTextAlignment(.leading)
-
-                    if !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(task.notes)
-                            .font(.caption)
-                            .foregroundStyle(FocusFlowTheme.secondaryText)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-
-                    metadata
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if task.priority != .none {
-                Circle()
-                    .fill(priorityColor)
-                    .frame(width: 7, height: 7)
-                    .padding(.top, 7)
-                    .accessibilityHidden(true)
-            }
+        HStack(alignment: .center, spacing: 12) {
+            completionButton
+            editArea
+            trailingControls
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, 13)
+        .padding(.horizontal, 14)
+        .background(
+            RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous)
+                .fill(FocusFlowTheme.cardBackground)
+        )
         .animation(.easeInOut(duration: 0.2), value: task.isCompleted)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button(action: onToggleCompletion) {
@@ -86,39 +58,69 @@ struct TaskRowView: View {
         .accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder
-    private var metadata: some View {
-        let hasMetadata = task.dueDate != nil || task.estimatedFocusDuration != nil || list != nil
-        if hasMetadata {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    if let dueDate = task.dueDate {
-                        TaskMetadataLabel(
-                            text: dueDescription(dueDate),
-                            systemImage: isOverdue(dueDate) ? "exclamationmark.circle.fill" : "calendar",
-                            tint: isOverdue(dueDate) ? FocusFlowTheme.accent : FocusFlowTheme.secondaryText
-                        )
-                    }
+    private var completionButton: some View {
+        Button(action: onToggleCompletion) {
+            Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(task.isCompleted ? FocusFlowTheme.mint : priorityColor)
+                .symbolRenderingMode(.hierarchical)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为已完成")
+    }
 
-                    if let duration = task.estimatedFocusDuration, duration > 0 {
-                        TaskMetadataLabel(
-                            text: durationDescription(duration),
-                            systemImage: "timer",
-                            tint: FocusFlowTheme.secondaryText
-                        )
-                    }
+    private var editArea: some View {
+        Button(action: onEdit) {
+            VStack(alignment: .leading, spacing: 6) {
+                titleText
+                metaRow
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 
-                    if let list {
-                        TaskMetadataLabel(
-                            text: list.name,
-                            systemImage: "folder",
-                            tint: FocusFlowTheme.secondaryText
-                        )
-                    }
+    private var titleText: some View {
+        Text(task.title)
+            .font(.body.weight(.medium))
+            .foregroundStyle(task.isCompleted ? FocusFlowTheme.secondaryText : FocusFlowTheme.primaryText)
+            .strikethrough(task.isCompleted, color: FocusFlowTheme.secondaryText)
+            .multilineTextAlignment(.leading)
+            .lineLimit(2)
+    }
 
-                }
+    private var metaRow: some View {
+        HStack(spacing: 9) {
+            PomodoroDots(completed: task.completedPomodoros, estimated: max(task.estimatedPomodoros, 1))
+            if let dueDate = task.dueDate {
+                dueLabel(dueDate)
+            }
+            if let list {
+                Text(list.name)
+                    .font(.caption2)
+                    .foregroundStyle(FocusFlowTheme.tertiaryText)
+                    .lineLimit(1)
             }
         }
+    }
+
+    @ViewBuilder
+    private var trailingControls: some View {
+        if task.isCompleted {
+            EmptyView()
+        } else if let onStartFocus {
+            PlayCircleButton(size: 36, action: onStartFocus)
+                .disabled(startDisabled)
+                .opacity(startDisabled ? 0.35 : 1)
+        }
+    }
+
+    private func dueLabel(_ date: Date) -> some View {
+        Text(dueDescription(date))
+            .font(.caption2)
+            .foregroundStyle(isOverdue(date) ? FocusFlowTheme.accent : FocusFlowTheme.tertiaryText)
+            .lineLimit(1)
     }
 
     private func isOverdue(_ date: Date) -> Bool {
@@ -133,27 +135,6 @@ struct TaskRowView: View {
         if calendar.isDateInTomorrow(date) {
             return "明天 \(date.formatted(date: .omitted, time: .shortened))"
         }
-        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
-    }
-
-    private func durationDescription(_ duration: TimeInterval) -> String {
-        let minutes = max(Int(duration / 60), 1)
-        if minutes >= 60, minutes.isMultiple(of: 60) {
-            return "\(minutes / 60) 小时"
-        }
-        return "\(minutes) 分钟"
-    }
-}
-
-private struct TaskMetadataLabel: View {
-    let text: String
-    let systemImage: String
-    let tint: Color
-
-    var body: some View {
-        Label(text, systemImage: systemImage)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(tint)
-            .lineLimit(1)
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }

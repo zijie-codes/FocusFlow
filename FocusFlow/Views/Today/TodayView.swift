@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TodayView: View {
     @EnvironmentObject private var container: AppContainer
+    @EnvironmentObject private var timer: TimerEngine
     @StateObject private var viewModel = TodayViewModel()
     @State private var pendingDeletion: TaskItem?
 
@@ -50,12 +51,29 @@ struct TodayView: View {
     private var taskList: some View {
         List {
             summarySection
+            quickStartSection
             filterSection
             tasksSection
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(FocusFlowTheme.pageBackground)
+    }
+
+    private var quickStartSection: some View {
+        Section {
+            QuickStartCard(
+                isTimerActive: timer.hasActiveSession,
+                onStart: startQuickFocus
+            )
+            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    private func startQuickFocus() {
+        container.startFocus(taskID: nil, mode: .countdown)
     }
 
     private var summarySection: some View {
@@ -106,18 +124,29 @@ struct TodayView: View {
 
     private var taskRows: some View {
         ForEach(viewModel.visibleTasks) { task in
-            TaskRowView(
-                task: task,
-                list: viewModel.list(for: task),
-                onToggleCompletion: { viewModel.toggleCompletion(of: task) },
-                onEdit: { viewModel.presentEditor(for: task) },
-                onDelete: { pendingDeletion = task },
-                onPostpone: task.isCompleted ? nil : { viewModel.postponeToTomorrow(task) }
-            )
-            .listRowInsets(EdgeInsets(top: 5, leading: 18, bottom: 5, trailing: 16))
-            .listRowBackground(FocusFlowTheme.cardBackground)
+            taskRow(task)
+                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
         .onMove(perform: viewModel.moveVisibleTasks)
+    }
+
+    private func taskRow(_ task: TaskItem) -> TaskRowView {
+        TaskRowView(
+            task: task,
+            list: viewModel.list(for: task),
+            onToggleCompletion: { viewModel.toggleCompletion(of: task) },
+            onEdit: { viewModel.presentEditor(for: task) },
+            onDelete: { pendingDeletion = task },
+            onPostpone: task.isCompleted ? nil : { viewModel.postponeToTomorrow(task) },
+            startDisabled: timer.hasActiveSession,
+            onStartFocus: { startFocus(for: task) }
+        )
+    }
+
+    private func startFocus(for task: TaskItem) {
+        container.startFocus(taskID: task.id, mode: .countdown, duration: task.estimatedFocusDuration)
     }
 
     private var tasksHeader: some View {
@@ -262,6 +291,43 @@ struct TodayView: View {
         case .medium: return "中优先级"
         case .high: return "高优先级"
         }
+    }
+}
+
+private struct QuickStartCard: View {
+    let isTimerActive: Bool
+    let onStart: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "timer")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(FocusFlowTheme.accent)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(FocusFlowTheme.accent.opacity(0.11)))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("快速开始")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(FocusFlowTheme.primaryText)
+                Text(isTimerActive ? "计时进行中" : "不关联任务，立即进入一个番茄")
+                    .font(.caption)
+                    .foregroundStyle(FocusFlowTheme.secondaryText)
+            }
+
+            Spacer(minLength: 8)
+
+            PlayCircleButton(size: 40, action: onStart)
+                .disabled(isTimerActive)
+                .opacity(isTimerActive ? 0.35 : 1)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .background(
+            RoundedRectangle(cornerRadius: FocusFlowTheme.cornerRadius, style: .continuous)
+                .fill(FocusFlowTheme.cardBackground)
+        )
+        .accessibilityElement(children: .combine)
     }
 }
 
